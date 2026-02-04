@@ -116,10 +116,14 @@ SaveSettings(*) {
 
 ; 今すぐ実行
 RunRestore(*) {
-    global scriptPath
-    if FileExist(scriptPath)
+    global scriptPath, myGui
+    if FileExist(scriptPath) {
+        ; 設定画面を最小化して邪魔にならないようにする
+        try {
+            WinMinimize "ahk_id " myGui.Hwnd
+        }
         Run scriptPath
-    else
+    } else
         MsgBox("復元スクリプトが見つかりません。", "エラー")
 }
 

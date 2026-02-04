@@ -94,8 +94,22 @@ if FileExist(posFile) {
 ; ========== メイン処理開始 ==========
 WriteLog("========== 復元処理を開始 ==========")
 
-; 1) 楽配くんが既に起動しているかチェック
-alreadyRunning := WinExist("メインメニュー") || WinExist("楽配くん")
+; 1) 楽配くんが既に起動しているかチェック（設定画面は除外）
+alreadyRunning := false
+if WinExist("メインメニュー") {
+    alreadyRunning := true
+} else {
+    ; 「楽配くん」を含むが「参照用復元」「設定」を含まないウィンドウを探す
+    for hwnd in WinGetList() {
+        try {
+            title := WinGetTitle(hwnd)
+            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") {
+                alreadyRunning := true
+                break
+            }
+        }
+    }
+}
 
 if alreadyRunning {
     if (ifInUse = "Skip") {
@@ -109,16 +123,23 @@ if alreadyRunning {
     Run rakuhaiShortcut
 }
 
-; 2) メインメニューが開くまで待つ
+; 2) メインメニューが開くまで待つ（設定画面は除外）
 WriteLog("メインメニューを待機中...")
 mainWin := ""
 Loop 120 {  ; 最大60秒待つ
     if WinExist("メインメニュー") {
         mainWin := "メインメニュー"
         break
-    } else if WinExist("楽配くん") {
-        mainWin := "楽配くん"
-        break
+    }
+    ; 「楽配くん」を含むが「参照用復元」「設定」を含まないウィンドウを探す
+    for hwnd in WinGetList() {
+        try {
+            title := WinGetTitle(hwnd)
+            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") {
+                mainWin := title
+                break 2
+            }
+        }
     }
     Sleep 500
 }
@@ -134,6 +155,21 @@ Sleep 1000
 WinActivate mainWin  ; 念のため2回
 WinWaitActive mainWin,, 10
 Sleep 2000  ; ウィンドウが完全に描画されるまで待つ
+
+; 楽配くんのウィンドウタイトルを確認
+rakuhaiTitle := ""
+try {
+    rakuhaiTitle := WinGetTitle(mainWin)
+}
+WriteLog("楽配くんウィンドウ: " rakuhaiTitle)
+
+; 「メインメニュー」または「楽配くん10」画面の場合のみ続行（それ以外はすべてスキップ）
+isMainMenu := InStr(rakuhaiTitle, "メインメニュー") || (rakuhaiTitle = "楽配くん10") || (rakuhaiTitle = "楽配くん 10")
+if !isMainMenu {
+    WriteLog("スキップ: メインメニュー画面ではありません（" rakuhaiTitle "）")
+    MsgBox("楽配くんがメインメニュー画面ではないため、復元をスキップしました。`n`n現在の画面: " rakuhaiTitle "`n`nメインメニュー画面に戻してから再実行してください。", "楽配くん 自動復元")
+    ExitApp
+}
 
 WriteLog("メインメニューを検出: " mainWin)
 
