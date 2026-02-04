@@ -3,6 +3,7 @@ rakuhai-restore-log.txt
 
 # 座標ファイル（PC固有）
 rakuhai-pos.txt
+rakuhai-pos.ini
 
 # 設定ファイル（任意：共有したければ削除）
 # rakuhai-config.ini

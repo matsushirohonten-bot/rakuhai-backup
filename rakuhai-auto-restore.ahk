@@ -40,70 +40,51 @@ if FileExist(configPath) {
     }
 }
 
-; ========== 座標設定 ==========
+; ========== 座標設定（INI形式で保存・読込） ==========
 rakuhaiShortcut := A_Desktop "\楽配くん参照用.lnk"
-posFile := A_ScriptDir "\rakuhai-pos.txt"
+posFile := A_ScriptDir "\rakuhai-pos.ini"
 
-; デフォルト座標（ウィンドウ相対）
-x_special := 674
-y_special := 240
-x_backup := 452
-y_backup := 161
-x_auto_tab := 349
-y_auto_tab := 298
-x_list_first := 250
-y_list_first := 345
-
-; rakuhai-pos.txt から座標を読み込む
-tabScreenX := 0
-tabScreenY := 0
-listScreenX := 0
-listScreenY := 0
-
-if FileExist(posFile) {
-    loop read, posFile {
-        line := Trim(A_LoopReadLine)
-        if (SubStr(line, 1, 9) = "auto_tab ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                x_auto_tab := Integer(parts[2])
-                y_auto_tab := Integer(parts[3])
-            }
-        } else if (SubStr(line, 1, 11) = "list_first ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                x_list_first := Integer(parts[2])
-                y_list_first := Integer(parts[3])
-            }
-        } else if (SubStr(line, 1, 16) = "auto_tab_screen ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                tabScreenX := Integer(parts[2])
-                tabScreenY := Integer(parts[3])
-            }
-        } else if (SubStr(line, 1, 17) = "list_first_screen") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                listScreenX := Integer(parts[2])
-                listScreenY := Integer(parts[3])
-            }
-        }
+; 座標を読み込む関数
+ReadPos(key, defaultVal := 0) {
+    global posFile
+    try {
+        return Integer(IniRead(posFile, "Coordinates", key, String(defaultVal)))
+    } catch {
+        return defaultVal
     }
 }
+
+; 座標を保存する関数（上書き、重複しない）
+SavePos(key, value) {
+    global posFile
+    IniWrite String(value), posFile, "Coordinates", key
+}
+
+; 座標を読み込む
+specialScreenX := ReadPos("SpecialX")
+specialScreenY := ReadPos("SpecialY")
+backupScreenX := ReadPos("BackupX")
+backupScreenY := ReadPos("BackupY")
+tabScreenX := ReadPos("TabX")
+tabScreenY := ReadPos("TabY")
+listScreenX := ReadPos("ListX")
+listScreenY := ReadPos("ListY")
+restoreScreenX := ReadPos("RestoreX")
+restoreScreenY := ReadPos("RestoreY")
 
 ; ========== メイン処理開始 ==========
 WriteLog("========== 復元処理を開始 ==========")
 
-; 1) 楽配くんが既に起動しているかチェック（設定画面は除外）
+; 1) 楽配くんが既に起動しているかチェック（設定画面・Cursorは除外）
 alreadyRunning := false
 if WinExist("メインメニュー") {
     alreadyRunning := true
 } else {
-    ; 「楽配くん」を含むが「参照用復元」「設定」を含まないウィンドウを探す
+    ; 「楽配くん」を含むが「参照用復元」「設定」「Cursor」「.md」を含まないウィンドウを探す
     for hwnd in WinGetList() {
         try {
             title := WinGetTitle(hwnd)
-            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") {
+            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") && !InStr(title, "Cursor") && !InStr(title, ".md") {
                 alreadyRunning := true
                 break
             }
@@ -123,7 +104,7 @@ if alreadyRunning {
     Run rakuhaiShortcut
 }
 
-; 2) メインメニューが開くまで待つ（設定画面は除外）
+; 2) メインメニューが開くまで待つ（設定画面・Cursorは除外）
 WriteLog("メインメニューを待機中...")
 mainWin := ""
 Loop 120 {  ; 最大60秒待つ
@@ -131,11 +112,11 @@ Loop 120 {  ; 最大60秒待つ
         mainWin := "メインメニュー"
         break
     }
-    ; 「楽配くん」を含むが「参照用復元」「設定」を含まないウィンドウを探す
+    ; 「楽配くん」を含むが「参照用復元」「設定」「Cursor」「.md」を含まないウィンドウを探す
     for hwnd in WinGetList() {
         try {
             title := WinGetTitle(hwnd)
-            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") {
+            if InStr(title, "楽配くん") && !InStr(title, "参照用復元") && !InStr(title, "設定") && !InStr(title, "Cursor") && !InStr(title, ".md") {
                 mainWin := title
                 break 2
             }
@@ -149,57 +130,94 @@ if (mainWin = "") {
     ExitApp
 }
 
-; ウィンドウをアクティブにして前面に
-WinActivate mainWin
+; ウィンドウをアクティブにして前面に＆固定位置に移動
+; ★親ウィンドウ「楽配くん10」を移動する（子ウィンドウ「メインメニュー」ではなく）
+parentWin := "楽配くん10"
+if !WinExist(parentWin) {
+    parentWin := "楽配くん 10"  ; スペースありバージョンも試す
+}
+WriteLog("親ウィンドウを検出: " parentWin " (存在: " (WinExist(parentWin) ? "はい" : "いいえ") ")")
+
+; 親ウィンドウが見つからない場合、mainWin を使用
+if !WinExist(parentWin) {
+    parentWin := mainWin
+    WriteLog("親ウィンドウが見つからないため mainWin を使用: " parentWin)
+}
+
+WinActivate parentWin
+Sleep 500
+
+; ★移動前の位置を取得
+beforeX := 0, beforeY := 0
+try {
+    WinGetPos &beforeX, &beforeY,,, parentWin
+    WriteLog("移動前の位置: X=" beforeX ", Y=" beforeY)
+}
+
+; ★ウィンドウを画面左上（0, 0）に移動して位置を固定（座標ずれ防止）
+WriteLog("ウィンドウを左上(0,0)に移動します...")
+try {
+    WinMove 0, 0,,, parentWin
+    WriteLog("WinMove 実行完了")
+} catch as e {
+    WriteLog("WinMove 失敗: " e.Message)
+}
 Sleep 1000
-WinActivate mainWin  ; 念のため2回
-WinWaitActive mainWin,, 10
+
+; ★移動後の位置を取得
+afterX := 0, afterY := 0
+try {
+    WinGetPos &afterX, &afterY,,, parentWin
+    WriteLog("移動後の位置: X=" afterX ", Y=" afterY)
+}
+
+WinActivate parentWin  ; 念のため2回
+WinWaitActive parentWin,, 10
 Sleep 2000  ; ウィンドウが完全に描画されるまで待つ
 
 ; 楽配くんのウィンドウタイトルを確認
-rakuhaiTitle := ""
-try {
-    rakuhaiTitle := WinGetTitle(mainWin)
-}
-WriteLog("楽配くんウィンドウ: " rakuhaiTitle)
+; ※Access アプリは MDI 構造のため、子ウィンドウ「メインメニュー」の存在で判定
+WriteLog("楽配くんウィンドウを左上に配置しました")
 
-; 「メインメニュー」または「楽配くん10」画面の場合のみ続行（それ以外はすべてスキップ）
-isMainMenu := InStr(rakuhaiTitle, "メインメニュー") || (rakuhaiTitle = "楽配くん10") || (rakuhaiTitle = "楽配くん 10")
+; 「メインメニュー」子ウィンドウが存在するかチェック
+isMainMenu := WinExist("メインメニュー")
 if !isMainMenu {
-    WriteLog("スキップ: メインメニュー画面ではありません（" rakuhaiTitle "）")
-    MsgBox("楽配くんがメインメニュー画面ではないため、復元をスキップしました。`n`n現在の画面: " rakuhaiTitle "`n`nメインメニュー画面に戻してから再実行してください。", "楽配くん 自動復元")
-    ExitApp
-}
-
-WriteLog("メインメニューを検出: " mainWin)
-
-; 3) 「特殊処理」ボタンのスクリーン座標を取得（初回は手動で指定）
-specialScreenX := 0
-specialScreenY := 0
-if FileExist(posFile) {
-    loop read, posFile {
-        line := Trim(A_LoopReadLine)
-        if (SubStr(line, 1, 15) = "special_screen ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                specialScreenX := Integer(parts[2])
-                specialScreenY := Integer(parts[3])
-            }
+    ; 他の画面（基本処理、特殊処理など）が開いているか確認
+    otherScreen := ""
+    for checkTitle in ["基本処理", "特殊処理", "集計処理", "宅配先情報", "データ出力", "マスター情報"] {
+        if WinExist(checkTitle) {
+            otherScreen := checkTitle
+            break
         }
     }
+    if (otherScreen != "") {
+        WriteLog("スキップ: メインメニュー画面ではありません（" otherScreen "）")
+        MsgBox("楽配くんがメインメニュー画面ではないため、復元をスキップしました。`n`n現在の画面: " otherScreen "`n`nメインメニュー画面に戻してから再実行してください。", "楽配くん 自動復元")
+    } else {
+        WriteLog("スキップ: メインメニューウィンドウが見つかりません")
+        MsgBox("楽配くんのメインメニュー画面が見つかりません。`n`nメインメニュー画面を開いてから再実行してください。", "楽配くん 自動復元")
+    }
+    ExitApp
 }
+WriteLog("メインメニューを検出: " mainWin)
 
-; 座標が保存されていなければ手動で指定
-if (specialScreenX = 0) {
-    MsgBox("【初回設定】`n`nマウスを「特殊処理」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
+; 3) 「特殊処理」ボタンの座標（なければキャプチャ）
+if (specialScreenX = 0 || specialScreenY = 0) {
+    MsgBox("【初回設定 1/5】`n`n楽配くんは画面左上に配置されています。`nマウスを「特殊処理」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
     KeyWait "Enter", "D"
     Sleep 100
     MouseGetPos &specialScreenX, &specialScreenY
-    FileAppend "special_screen " specialScreenX " " specialScreenY "`n", posFile
+    SavePos("SpecialX", specialScreenX)
+    SavePos("SpecialY", specialScreenY)
     WriteLog("特殊処理ボタン座標を保存: X=" specialScreenX ", Y=" specialScreenY)
 }
 
 WriteLog("特殊処理ボタンをクリック: X=" specialScreenX ", Y=" specialScreenY)
+
+; 楽配くんを前面に出してからクリック
+WinActivate parentWin
+Sleep 500
+WinWaitActive parentWin,, 3
 
 ; 確実にクリック（3回試行）
 Loop 3 {
@@ -225,39 +243,27 @@ Loop 60 {
 }
 if !specialFound {
     WriteLog("失敗: 特殊処理画面が開きませんでした")
-    MsgBox "特殊処理画面が開きませんでした。`n`nrakuhai-pos.txt を削除して再実行すると、座標を再設定できます。"
+    MsgBox "特殊処理画面が開きませんでした。`n`nrakuhai-pos.ini を削除して再実行すると、座標を再設定できます。"
     ExitApp
 }
 WriteLog("特殊処理画面を開いた")
 Sleep 1000
 
-; 5) 「バックアップ／復元処理」ボタンのスクリーン座標を取得
-backupScreenX := 0
-backupScreenY := 0
-if FileExist(posFile) {
-    loop read, posFile {
-        line := Trim(A_LoopReadLine)
-        if (SubStr(line, 1, 14) = "backup_screen ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                backupScreenX := Integer(parts[2])
-                backupScreenY := Integer(parts[3])
-            }
-        }
-    }
-}
-
-; 座標が保存されていなければ手動で指定
-if (backupScreenX = 0) {
-    MsgBox("【初回設定】`n`nマウスを「バックアップ／復元処理」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
+; 5) 「バックアップ／復元処理」ボタンの座標
+if (backupScreenX = 0 || backupScreenY = 0) {
+    MsgBox("【初回設定 2/5】`n`nマウスを「バックアップ／復元処理」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
     KeyWait "Enter", "D"
     Sleep 100
     MouseGetPos &backupScreenX, &backupScreenY
-    FileAppend "backup_screen " backupScreenX " " backupScreenY "`n", posFile
+    SavePos("BackupX", backupScreenX)
+    SavePos("BackupY", backupScreenY)
     WriteLog("バックアップ復元処理ボタン座標を保存: X=" backupScreenX ", Y=" backupScreenY)
 }
 
 WriteLog("バックアップ復元処理ボタンをクリック: X=" backupScreenX ", Y=" backupScreenY)
+WinActivate "特殊処理"
+Sleep 500
+WinWaitActive "特殊処理",, 3
 ReliableClick(backupScreenX, backupScreenY, 2000)
 
 ; 6) 「参照用データ復元」が出るまで待つ
@@ -284,63 +290,58 @@ WriteLog("参照用データ復元画面を開いた: " refTitle)
 ; 7) タブと一覧のクリック
 winForClick := WinExist("バックアップ") ? "バックアップ" : refTitle
 WinActivate winForClick
-Sleep 1500
+Sleep 500
+WinWaitActive winForClick,, 3
+Sleep 500
 
-; タブの画面座標がまだ保存されていなければ手動で指定
-if (tabScreenX = 0) {
-    MsgBox "マウスを「自動バックアップ一覧」タブの上に手動で動かしてください。`n`n位置が決まったら Enter キーを押してください。"
+; タブの座標
+if (tabScreenX = 0 || tabScreenY = 0) {
+    MsgBox("【初回設定 3/5】`n`nマウスを「自動バックアップ一覧」タブの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
     KeyWait "Enter", "D"
     Sleep 100
     MouseGetPos &tabScreenX, &tabScreenY
-    FileAppend "auto_tab_screen " tabScreenX " " tabScreenY "`n", posFile
+    SavePos("TabX", tabScreenX)
+    SavePos("TabY", tabScreenY)
     WriteLog("自動バックアップ一覧タブ座標を保存: X=" tabScreenX ", Y=" tabScreenY)
 }
 
 ; タブをクリック
 WriteLog("自動バックアップ一覧タブをクリック: X=" tabScreenX ", Y=" tabScreenY)
+WinActivate winForClick
+Sleep 300
 ReliableClick(tabScreenX, tabScreenY, 1000)
 
-; 一覧の1行目の画面座標がまだ保存されていなければ手動で指定
-if (listScreenX = 0) {
-    MsgBox "マウスを一覧の「1行目」（一番上の行）の上に手動で動かしてください。`n`n位置が決まったら Enter キーを押してください。"
+; 一覧の1行目の座標
+if (listScreenX = 0 || listScreenY = 0) {
+    MsgBox("【初回設定 4/5】`n`nマウスを一覧の「1行目」（一番上の行）の上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
     KeyWait "Enter", "D"
     Sleep 100
     MouseGetPos &listScreenX, &listScreenY
-    FileAppend "list_first_screen " listScreenX " " listScreenY "`n", posFile
+    SavePos("ListX", listScreenX)
+    SavePos("ListY", listScreenY)
     WriteLog("一覧1行目座標を保存: X=" listScreenX ", Y=" listScreenY)
 }
 
 ; 一覧の1行目をクリック
 WriteLog("一覧の1行目をクリック: X=" listScreenX ", Y=" listScreenY)
+WinActivate winForClick
+Sleep 300
 ReliableClick(listScreenX, listScreenY, 800)
 
-; 8) 復元ボタンのスクリーン座標を取得
-restoreScreenX := 0
-restoreScreenY := 0
-if FileExist(posFile) {
-    loop read, posFile {
-        line := Trim(A_LoopReadLine)
-        if (SubStr(line, 1, 15) = "restore_screen ") {
-            parts := StrSplit(line, " ")
-            if (parts.Length >= 3) {
-                restoreScreenX := Integer(parts[2])
-                restoreScreenY := Integer(parts[3])
-            }
-        }
-    }
-}
-
-; 座標が保存されていなければ手動で指定
-if (restoreScreenX = 0) {
-    MsgBox("【初回設定】`n`nマウスを「復元」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
+; 8) 復元ボタンの座標
+if (restoreScreenX = 0 || restoreScreenY = 0) {
+    MsgBox("【初回設定 5/5】`n`nマウスを「復元」ボタンの上に動かしてください。`n`n位置が決まったら Enter キーを押してください。", "座標キャプチャ")
     KeyWait "Enter", "D"
     Sleep 100
     MouseGetPos &restoreScreenX, &restoreScreenY
-    FileAppend "restore_screen " restoreScreenX " " restoreScreenY "`n", posFile
+    SavePos("RestoreX", restoreScreenX)
+    SavePos("RestoreY", restoreScreenY)
     WriteLog("復元ボタン座標を保存: X=" restoreScreenX ", Y=" restoreScreenY)
 }
 
 WriteLog("復元ボタンをクリック: X=" restoreScreenX ", Y=" restoreScreenY)
+WinActivate winForClick
+Sleep 300
 ReliableClick(restoreScreenX, restoreScreenY, 1000)
 
 ; 9) 確認ダイアログを待つ
