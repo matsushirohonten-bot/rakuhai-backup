@@ -1,0 +1,8 @@
+# ログファイル（実行ごとに増える）
+rakuhai-restore-log.txt
+
+# 座標ファイル（PC固有）
+rakuhai-pos.txt
+
+# 設定ファイル（任意：共有したければ削除）
+# rakuhai-config.ini
